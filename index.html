@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Yen Exchange Calculator with Flags</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Scrollbar styling for dropdown */
+    .custom-select-options {
+      max-height: 150px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #a0aec0 transparent;
+    }
+    .custom-select-options::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-select-options::-webkit-scrollbar-thumb {
+      background-color: #a0aec0;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 py-10">
+  <div class="bg-white max-w-md mx-auto p-6 rounded-xl shadow-md">
+    <h2 class="text-2xl font-bold mb-4 text-center">Yen Exchange Calculator</h2>
+
+    <label for="amount" class="block text-sm font-medium text-gray-700">Amount in JPY (¥):</label>
+    <input
+      type="number"
+      id="amount"
+      placeholder="Enter amount in Yen"
+      class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring focus:ring-blue-200"
+    />
+
+    <div class="flex gap-3 mt-4 items-center">
+      <input
+        type="text"
+        id="converted"
+        readonly
+        class="flex-1 rounded-md border border-gray-300 px-3 py-2 bg-gray-100 text-gray-700"
+        placeholder="Converted amount"
+      />
+
+      <!-- Custom Select Container -->
+      <div
+        id="customSelect"
+        tabindex="0"
+        class="relative w-40 cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-2 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+      >
+        <img
+          id="selectedFlag"
+          src="https://flagcdn.com/w20/us.png"
+          alt="Flag"
+          class="w-5 h-5 rounded-sm"
+        />
+        <span id="selectedCurrency" class="text-gray-700 font-medium">USD</span>
+        <svg
+          class="ml-auto w-4 h-4 text-gray-500"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+
+        <!-- Dropdown options -->
+       <div
+          id="options"
+          class="custom-select-options absolute top-full left-0 right-0 mt-1 rounded-md border border-gray-300 bg-white shadow-lg z-10 hidden"
+        >
+        </div>
+      </div>
+    </div>
+
+    <div id="rateInfo" class="mt-4 text-sm text-gray-600"></div>
+
+    <div
+      id="convertedRow"
+      class="hidden flex items-center gap-2 mt-4 text-sm font-medium text-gray-800"
+    >
+      <span>Currency Code:</span>
+      <span id="convertedText" class="font-bold text-blue-700"></span>
+    </div>
+  </div>
+
+  <script>
+    const customSelect = document.getElementById("customSelect");
+    const options = document.getElementById("options");
+    const selectedFlag = document.getElementById("selectedFlag");
+    const selectedCurrency = document.getElementById("selectedCurrency");
+
+    // Open/Close dropdown
+    customSelect.addEventListener("click", () => {
+      options.classList.toggle("hidden");
+    });
+
+    // Close dropdown if clicking outside
+    document.addEventListener("click", (e) => {
+      if (!customSelect.contains(e.target)) {
+        options.classList.add("hidden");
+      }
+    });
+
+    // Convert on amount input change
+    document.getElementById("amount").addEventListener("input", () => {
+      convert();
+    });
+
+    let exchangeRates = {};
+
+    async function fetchCurrencies() {
+      try {
+        const response = await fetch('currencies.php'); // Expected format: [{ code: "usd", flag_url: "..." }, ...]
+        const currencies = await response.json();
+
+        options.innerHTML = '';
+
+        currencies.forEach((currency, index) => {
+          const option = document.createElement('div');
+          option.className = 'option flex items-center gap-2 px-3 py-2 hover:bg-blue-100 cursor-pointer';
+          option.setAttribute('data-value', currency.code);
+          option.setAttribute('data-flag', currency.flag_url);
+
+          option.innerHTML = `
+            <img src="${currency.flag_url}" alt="${currency.code.toUpperCase()} Flag" class="w-5 h-5 rounded-sm" />
+            <span>${currency.code.toUpperCase()}</span>
+          `;
+
+          option.addEventListener('click', () => {
+            selectedCurrency.textContent = currency.code.toUpperCase();
+            selectedFlag.src = currency.flag_url;
+            selectedFlag.alt = `${currency.code.toUpperCase()} Flag`;
+            options.classList.add("hidden");
+            convert();
+          });
+
+          options.appendChild(option);
+
+          // Set initial selected currency from the first one
+          if (index === 0) {
+            selectedCurrency.textContent = currency.code.toUpperCase();
+            selectedFlag.src = currency.flag_url;
+            selectedFlag.alt = `${currency.code.toUpperCase()} Flag`;
+          }
+        });
+
+        convert(); // Perform initial conversion
+      } catch (error) {
+        console.error('Error fetching currencies:', error);
+      }
+    }
+
+    async function fetchExchangeRates() {
+      try {
+        const response = await fetch('exchange_rates.php');
+        if (!response.ok) throw new Error('Failed to fetch exchange rates');
+        exchangeRates = await response.json();
+        convert(); // Convert once rates are loaded
+      } catch (error) {
+        console.error('Error fetching exchange rates:', error);
+        // fallback hardcoded rates
+        exchangeRates = {
+          usd: 0.0065,
+          eur: 0.0060,
+          bdt: 0.72,
+        };
+      }
+    }
+
+    // Fetch currencies first, then exchange rates
+    fetchCurrencies().then(() => {
+      fetchExchangeRates();
+    });
+
+    function convert() {
+      const amount = parseFloat(document.getElementById("amount").value);
+      const convertedField = document.getElementById("converted");
+      const convertedText = document.getElementById("convertedText");
+      const convertedRow = document.getElementById("convertedRow");
+      const rateInfo = document.getElementById("rateInfo");
+
+      const currency = selectedCurrency.textContent.toLowerCase();
+      const rate = exchangeRates[currency] || 1;
+
+      rateInfo.innerText = `Exchange Rate: 1 JPY = ${rate} ${currency.toUpperCase()}`;
+
+      if (isNaN(amount) || amount <= 0) {
+        convertedField.value = "Invalid";
+        convertedText.innerText = "";
+        convertedRow.classList.remove("hidden");
+      } else {
+        const result = amount * rate;
+        convertedField.value = result.toFixed(2);
+        convertedText.innerText = currency.toUpperCase();
+        convertedRow.classList.remove("hidden");
+      }
+    }
+  </script>
+</body>
+</html>
